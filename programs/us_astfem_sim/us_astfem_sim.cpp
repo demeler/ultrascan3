@@ -232,7 +232,7 @@ void US_Astfem_Sim::init_simparams( void )
    sp.delay_minutes     =( double)(sp.rotorspeed/(60.0*sp.acceleration));// Minimum delay ie. time to accelerate the rotor
    simparams.speed_step << sp;
 
-   simparams.simpoints         = 500;    // Initialized number of radial grid points
+   simparams.simpoints         = 200;    // Initialized number of radial grid points
    simparams.radial_resolution = 0.001;  // Increment in radial experimental grid
    simparams.meshType          = US_SimulationParameters::ASTFEM; // Used for solver option
    simparams.gridType          = US_SimulationParameters::MOVING; // Used for grid option
@@ -806,19 +806,11 @@ DbgLv(1) << "first_last_data for the step" << sp->time_first << sp->time_last
       if ( astfem )
       {
          astfem->disconnect();
-         free( astfem );
+         delete( astfem );
       }
 
       // make sure the selected model is adjusted for the selected temperature
       // and buffer conditions:
-      US_Math2::SolutionData sol_data;
-      sol_data.density   = buffer.density;
-      sol_data.viscosity = buffer.viscosity;
-      sol_data.vbar20    = 0.72; //The assumption here is that vbar does not change with
-      sol_data.vbar      = 0.72; //temp, so vbar correction will cancel in s correction
-      sol_data.manual    = buffer.manual;
-      US_Math2::data_correction( simparams.temperature, sol_data );
-
       // make a copy of the original system to correct s and D for visc and dens.
       // save original model unmodified, pass the density/viscosity corrected data
       // to astfem_rsa for simulating experimental space:
@@ -826,6 +818,16 @@ DbgLv(1) << "first_last_data for the step" << sp->time_first << sp->time_last
       US_Model system_corrected = system;
       for ( int jc = 0; jc < system_corrected.components.size(); jc++ )
       {
+         US_Math2::SolutionData sol_data;
+         sol_data.density   = buffer.density;
+         sol_data.viscosity = buffer.viscosity;
+         sol_data.manual    = buffer.manual;
+         double temp = simparams.temperature;
+         sol_data.vbar20 = system_corrected.components.at(jc).vbar20;
+         sol_data.vbar   = US_Math2::adjust_vbar20(sol_data.vbar20, temp);
+
+         US_Math2::data_correction( simparams.temperature, sol_data );
+
          system_corrected.components[ jc ].s /= sol_data.s20w_correction;
          system_corrected.components[ jc ].D /= sol_data.D20w_correction;
       }

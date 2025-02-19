@@ -25,12 +25,14 @@ TRANSLATIONS = $${TARGET}_DE_de.ts
 
 HEADERS      = us_ana_profile.h   \
                us_analyte.h       \
+               us_archive.h       \
                us_astfem_math.h   \
                us_astfem_rsa.h    \
                us_buffer.h        \
                us_cfa_data.h      \
                us_constants.h     \
                us_crc.h           \
+               us_csv_data.h      \
                us_dataIO.h        \
                us_datafiles.h     \
                us_db2.h           \
@@ -68,6 +70,7 @@ HEADERS      = us_ana_profile.h   \
                us_tar.h           \
                us_time_state.h    \
                us_timer.h         \
+               us_geturl.h        \
                us_util.h          \
                us_vector.h        \
                us_xpn_data.h      \
@@ -75,12 +78,14 @@ HEADERS      = us_ana_profile.h   \
 
 SOURCES      = us_ana_profile.cpp   \
                us_analyte.cpp       \
+               us_archive.cpp       \
                us_astfem_math.cpp   \
                us_astfem_rsa.cpp    \
                us_buffer.cpp        \
                us_cfa_data.cpp      \
                us_constants.cpp     \
                us_crc.cpp           \
+               us_csv_data.cpp      \
                us_dataIO.cpp        \
                us_datafiles.cpp     \
                us_db2.cpp           \
@@ -118,6 +123,7 @@ SOURCES      = us_ana_profile.cpp   \
                us_tar.cpp           \
                us_time_state.cpp    \
                us_timer.cpp         \
+               us_geturl.cpp        \
                us_util.cpp          \
                us_vector.cpp        \
                us_xpn_data.cpp      \
