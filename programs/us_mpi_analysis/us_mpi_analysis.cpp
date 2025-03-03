@@ -1,7 +1,7 @@
 #include "us_mpi_analysis.h"
 #include "us_math2.h"
 #include "us_astfem_math.h"
-#include "us_tar.h"
+#include "us_archive.h"
 #include "us_memory.h"
 #include "us_sleep.h"
 #include "us_util.h"
@@ -172,11 +172,12 @@ DbgLv(0) << "work_dir=" << work_dir;
       DbgLv(0) << "Us_Mpi_Analysis  " << REVISION;
 
       // Unpack the input tarfile
-      US_Tar tar;
-
-      int result = tar.extract( tarfile );
-
-      if ( result != TAR_OK ) abort( "Could not unpack " + tarfile );
+      US_Archive archive;
+      bool ok = archive.extract( tarfile );
+      if ( !ok ) {
+         QString error = archive.getError();
+         abort( "Could not unpack\n " + error + "\n" + tarfile );
+      }
 
       // Create a dedicated output directory and make sure it's empty
       // During testing, it may not always be empty
@@ -852,6 +853,43 @@ int stm2= ds->simparams.speed_step[nssp-1].time_last;
 if ( my_rank == 0 ) {
  DbgLv(0) << my_rank << ": stm1" << stm1 << "stm2" << stm2;
  ds->simparams.debug(); }
+      }
+   }
+
+   // If debug text modifies SetSpeedLowA value, apply it
+   int lo_ss_acc = 250;
+   QStringList dbgtxt = US_Settings::debug_text();
+   for ( int ii = 0; ii < dbgtxt.count(); ii++ )
+   {
+      if ( dbgtxt[ ii ].startsWith( "SetSpeedLowA=" ) )
+      {
+         lo_ss_acc        = QString( dbgtxt[ ii ] ).section( "=", 1, 1 ).toInt();
+         if ( my_rank == 0 ){
+            DbgLv(1) << "DSM: SetSpeedLowA:    SetSpeedLowA" << lo_ss_acc;
+         }
+      }
+   }
+
+   // Check for low acceleration in every dataset
+   for ( int ee = 0; ee < data_sets.size(); ee++ )
+   {
+      US_SolveSim::DataSet*  dset    = data_sets[ ee ];
+      // Do a quick test of the speed step implied by TimeState
+      int tf_scan   = dset->simparams.speed_step[ 0 ].time_first;
+      int accel1    = dset->simparams.speed_step[ 0 ].acceleration;
+      int rspeed    = dset->simparams.speed_step[ 0 ].rotorspeed;
+      int tf_aend   = ( rspeed + accel1 - 1 ) / ( accel1 == 0 ? 1 : accel1 );
+      int accel2    = dset->simparams.sim_speed_prof[ 0 ].acceleration;
+      if ( my_rank == 0 ){
+         DbgLv(1) << "DSM: ssck: rspeed accel1 tf_aend tf_scan"
+                 << rspeed << accel1 << tf_aend << tf_scan
+                 << "accel2" << accel2 << "lo_ss_acc" << lo_ss_acc;
+      }
+      if ( accel1 < lo_ss_acc  ||  tf_aend > ( tf_scan - 3 ) )
+      {
+         DbgLv(0) << "rank: " << my_rank << "  Dataset " << ee << " Name: " << dset->run_data.runID <<
+                  " likely bad Timestate. Implied acceleration: " << accel1 <<
+                  " accel end: " << tf_aend << "s. First scan: " << tf_scan << "s.";
       }
    }
 
@@ -2151,7 +2189,12 @@ DbgLv(0) << "wrMo: model descr" << model.description;
          component.s       = solute->s;
          component.f_f0    = solute->k;
          component.name    = QString().sprintf( "SC%04d", ii + 1 );
-         component.vbar20  = (attr_z == ATTR_V) ? vbar20 : solute->v;
+         // component.vbar20  = (attr_z == ATTR_V) ? vbar20 : solute->v;
+         if ( stype == 0) {
+            component.vbar20  = vbar20;
+         } else {
+            component.vbar20  = solute->v;
+         }
          component.signal_concentration = solute->c;
 
          US_Model::calc_coefficients( component );
@@ -2166,9 +2209,9 @@ DbgLv(1) << "wrMo: stype" << stype << QString().sprintf("0%o",stype)
    QString fn        = runID + fileid;
    int lenfn         = fn.length();
 
-   if ( lenfn > 99 )
+   if ( lenfn > 96 )
    { // Insure a model file name less than 100 characters in length (tar limit)
-      int lenri         = runID.length() + 99 - lenfn;
+      int lenri         = runID.length() + 96 - lenfn;
       fn                = runID.left( lenri ) + fileid;
    }
 
@@ -2481,8 +2524,14 @@ DbgLv(0) << my_rank << ":       model2.description" << model2.description;
    }
 
    // Create the archive file containing all outputs
-   US_Tar tar;
-   tar.create( "analysis-results.tar", files );
+   US_Archive archive;
+   QString filename = "analysis-results.tar";
+   bool ok = archive.compress( files, filename );
+   if ( !ok ) {
+      QString error = archive.getError();
+      abort( "Could not compress files\n " + error + "\n" + filename );
+   }
+
 for(int jf=0;jf<files.size();jf++)
  DbgLv(0) << my_rank << "   tar file" << jf << ":" << files[jf];
 
@@ -2574,6 +2623,8 @@ DbgLv(1) << "wrMo: tripleID" << tripleID << "dates" << dates;
    QString id        = model.typeText( subtype );
    if ( analysis_type.contains( "CG" ) )
       id                = id.replace( "2DSA", "2DSA-CG" );
+   if ( max_iterations > 1  &&  mc_iterations == 1 )
+      id               += "-IT";
    QString analyID   = dates + "_" + id + "_" + requestID + "_" + iterID;
    int     stype     = data_sets[ current_dataset ]->solute_type;
    double  vbar20    = data_sets[ current_dataset ]->vbar20;
@@ -2624,9 +2675,9 @@ DbgLv(1) << "wrMo: stype" << stype << QString().sprintf("0%o",stype)
    QString fn        = runID + fileid;
    int lenfn         = fn.length();
 
-   if ( lenfn > 99 )
+   if ( lenfn > 96 )
    { // Insure a model file name less than 100 characters in length (tar limit)
-      int lenri         = runID.length() + 99 - lenfn;
+      int lenri         = runID.length() + 96 - lenfn;
       fn                = runID.left( lenri ) + fileid;
    }
 

@@ -6,7 +6,6 @@
 #include <fstream>
 #include <QtSql>
 
-
 #include "../us_xpn_viewer/us_xpn_viewer_gui.h"
 #include "../us_experiment/us_experiment_gui_optima.h"
 #include "../us_convert/us_experiment.h"     
@@ -26,7 +25,8 @@
 #include "../us_edit/us_select_lambdas.h"
 
 #include "../us_autoflow_analysis/us_autoflow_analysis.h"
-#include "../us_autoflow_reports/us_autoflow_reports.h"
+#include "../us_reporter_gmp/us_reporter_gmp.h"
+#include "../us_esigner_gmp/us_esigner_gmp.h"
 
 #include "us_protocol_util.h"
 #include "us_project_gui.h"
@@ -111,23 +111,31 @@ class US_InitDialogueGui : public US_WidgetsDialog
     int offset;
 
     int autoflow_records;
+    QMap < QString, QString > channels_report;
 
     void initRecords( void );
     //void initRecordsDialogue( void );
     
     int  get_autoflow_records( void );
+    bool isOperRev( int, QString );
     QMap < QString, QString > read_autoflow_record( int );
-    static int list_all_autoflow_records( QList< QStringList >&, US_DB2* );
+    QMap < QString, QString > read_autoflow_failed_record( QString );
+    int list_all_autoflow_records( QList< QStringList >&, US_DB2* );
     
     void read_optima_machines( US_DB2* = 0 ); 
     QList< QMap<QString, QString> > instruments;
 
+    void do_run_tables_cleanup( QMap< QString, QString > );
+    void do_run_data_cleanup( QMap< QString, QString > );
+    void do_create_autoflowStatus_for_failedRun( QMap< QString, QString > );
+    bool readAProfileBasicParms_auto ( QXmlStreamReader& );
+      
  protected:
     void resizeEvent(QResizeEvent *event) override;
       
   private slots:
      void update_autoflow_data( void );
-     
+          
   signals:
      void define_new_experiment_init ( QStringList & );
      void switch_to_live_update_init(  QMap < QString, QString > & protocol_details );
@@ -135,6 +143,8 @@ class US_InitDialogueGui : public US_WidgetsDialog
      void switch_to_editing_init(  QMap < QString, QString > & protocol_details );
      void switch_to_analysis_init(  QMap < QString, QString > & protocol_details );
      void switch_to_report_init(  QMap < QString, QString > & protocol_details );
+     void switch_to_esign_init(  QMap < QString, QString > & protocol_details );
+     void to_initAutoflow( void );
 
 };
 
@@ -167,19 +177,23 @@ class US_ExperGui : public US_WidgetsDialog
       void manageExperiment ( void );        // Slot for exp.  button clicked
       void us_exp_is_closed_set_button( void );
       void to_live_update( QMap < QString, QString > & protocol_details );
+      void to_import( QMap < QString, QString > & protocol_details );
       //void clear_experiment( QString & protocolName);
       void exp_cleared( void );
       void pass_used_instruments( QStringList & );
       void expsetup_msg_closed( void );
+      void to_initAutoflow( void );
       
       
    signals:
       void switch_to_live_update( QMap < QString, QString > & protocol_details );
+      void switch_to_import( QMap < QString, QString > & protocol_details );
       void set_auto_mode( void );
       void reset_experiment( QString & protocolName);
       void to_autoflow_records( void );
       void define_used_instruments( QStringList & );
       //void close_expsetup_msg( void );
+      void switch_to_initAutoflow( void );
 };
 
 
@@ -336,8 +350,9 @@ class US_ReportStageGui : public US_WidgetsDialog
     US_ReportStageGui( QWidget* );
     ~US_ReportStageGui() {};
   
-     US_Reports_auto*     sdiag;
-     
+    //US_Reports_auto*     sdiag;
+    US_ReporterGMP*     sdiag;
+    
   private:
     US_ComProjectMain*    mainw;      // Parent to all panels
     int offset;
@@ -352,8 +367,36 @@ class US_ReportStageGui : public US_WidgetsDialog
   signals:
     void start_report( QMap < QString, QString > & );
     void reset_reporting_passed ( void );
+    void switch_to_esign( QMap < QString, QString > & );
 };
 
+
+//! \brief eSign panel
+class US_eSignaturesGui: public US_WidgetsDialog 
+{
+  Q_OBJECT
+  
+  public:
+    US_eSignaturesGui( QWidget* );
+    ~US_eSignaturesGui() {};
+  
+     US_eSignaturesGMP*   sdiag;
+    
+  private:
+    US_ComProjectMain*    mainw;      // Parent to all panels
+    int offset;
+
+ protected:
+    void resizeEvent(QResizeEvent *event) override;
+      
+  private slots:
+    void do_esign( QMap < QString, QString > & );
+    void reset_esigning( void );
+
+  signals:
+    void start_esign( QMap < QString, QString > & );
+    void reset_esigning_passed ( void );
+};
 
 
 //! \brief ComProject Main Window
@@ -402,13 +445,14 @@ class US_ComProjectMain : public US_Widgets
   //US_SelectItem* pdiag_autoflow;
     
  private:
-  US_InitDialogueGui*  epanInit;     // US_Init panel
+  US_InitDialogueGui*  epanInit;        // US_Init panel
   US_ExperGui*         epanExp;         // US_Exp panel
   US_ObservGui*        epanObserv;      // US_Observ panel
   US_PostProdGui*      epanPostProd;    // US_PostProd panel
   US_EditingGui*       epanEditing;     // US_Editing panel
   US_AnalysisGui*      epanAnalysis;    // US_Analysis panel
   US_ReportStageGui*   epanReport;      // US_Report panel
+  US_eSignaturesGui*   epanSign;        // electronic signatures 
     
   //int         statflag;        // Composite panels status flag
   //int         dbg_level;       // Debug print flag
@@ -439,6 +483,7 @@ private slots:
   void switch_to_editing( QMap < QString, QString > & protocol_details );
   void switch_to_analysis( QMap < QString, QString > & protocol_details );
   void switch_to_report( QMap < QString, QString > & protocol_details );
+  void switch_to_esign( QMap < QString, QString > & ); 
   
     
   //void switch_to_experiment( QString & protocolName );
@@ -466,6 +511,7 @@ signals:
   void pass_to_editing( QMap < QString, QString > & protocol_details );
   void pass_to_analysis( QMap < QString, QString > & protocol_details );
   void pass_to_report( QMap < QString, QString > & protocol_details );
+  void pass_to_esign( QMap < QString, QString > & protocol_details );
   
 
   //void clear_experiment( QString & protocolName);
@@ -475,6 +521,7 @@ signals:
   void reset_data_editing( void );
   void reset_live_update( void );
   void reset_reporting( void );
+  void reset_esigning( void );
 };
 
 
